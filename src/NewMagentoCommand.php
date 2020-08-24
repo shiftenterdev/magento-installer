@@ -19,6 +19,7 @@ class NewMagentoCommand extends Command
 
     const APP_LATEST_VERSION = '2.4.0';
     const DOWNLOAD_URL = 'https://github.com/magento/magento2/archive/';
+
     /**
      * Configure the command options.
      *
@@ -37,8 +38,8 @@ class NewMagentoCommand extends Command
     /**
      * Execute the command.
      *
-     * @param  \Symfony\Component\Console\Input\InputInterface  $input
-     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
+     * @param \Symfony\Component\Console\Input\InputInterface $input
+     * @param \Symfony\Component\Console\Output\OutputInterface $output
      * @return int
      */
     protected function execute(InputInterface $input, OutputInterface $output)
@@ -47,7 +48,7 @@ class NewMagentoCommand extends Command
             throw new RuntimeException('The Magento installer requires PHP 7.3.0 or greater. Please use "composer create-project ...." command instead.');
         }
 
-        if (! extension_loaded('zip')) {
+        if (!extension_loaded('zip')) {
             throw new RuntimeException('The Zip PHP extension is not installed. Please install it and try again.');
         }
 
@@ -57,37 +58,37 @@ class NewMagentoCommand extends Command
 
         $application_version = $version ?? self::APP_LATEST_VERSION;
 
-        $directory = $name && $name !== '.' ? getcwd().'/'.$name : getcwd();
+        $directory = $name && $name !== '.' ? getcwd() . '/' . $name : getcwd();
 
-        if (! $input->getOption('force')) {
+        if (!$input->getOption('force')) {
             $this->verifyApplicationDoesntExist($directory);
         }
 
-        $output->writeln('<info>Crafting application...</info>');
+        $output->writeln('<info>Application\'s files are coming...</info>');
 
         $this->download($zipFile = $this->makeFilename(), $application_version)
-             ->extract($zipFile, $directory)
-             ->prepareWritableDirectories($directory, $output)
-             ->cleanUp($zipFile);
+            ->extract($zipFile, $directory)
+            ->prepareWritableDirectories($directory, $output)
+            ->cleanUp($zipFile);
 
         $composer = $this->findComposer();
 
         $commands = [
-            $composer.' install --no-scripts',
-            $composer.' run-script post-root-package-install',
-            $composer.' run-script post-create-project-cmd',
-            $composer.' run-script post-autoload-dump',
+            $composer . ' install --no-scripts',
+            $composer . ' run-script post-root-package-install',
+            $composer . ' run-script post-create-project-cmd',
+            $composer . ' run-script post-autoload-dump',
         ];
 
         if ($input->getOption('no-ansi')) {
             $commands = array_map(function ($value) {
-                return $value.' --no-ansi';
+                return $value . ' --no-ansi';
             }, $commands);
         }
 
         if ($input->getOption('quiet')) {
             $commands = array_map(function ($value) {
-                return $value.' --quiet';
+                return $value . ' --quiet';
             }, $commands);
         }
 
@@ -97,7 +98,7 @@ class NewMagentoCommand extends Command
             try {
                 $process->setTty(true);
             } catch (RuntimeException $e) {
-                $output->writeln('Warning: '.$e->getMessage());
+                $output->writeln('Warning: ' . $e->getMessage());
             }
         }
 
@@ -115,7 +116,7 @@ class NewMagentoCommand extends Command
     /**
      * Verify that the application does not already exist.
      *
-     * @param  string  $directory
+     * @param string $directory
      * @return void
      */
     protected function verifyApplicationDoesntExist($directory)
@@ -126,39 +127,38 @@ class NewMagentoCommand extends Command
     }
 
     /**
-     * Generate a random temporary filename.
+     * Clean-up the Zip file.
      *
-     * @return string
+     * @param string $zipFile
+     * @return $this
      */
-    protected function makeFilename()
+    protected function cleanUp($zipFile)
     {
-        return getcwd().'/magento_'.md5(time().uniqid()).'.zip';
+        @chmod($zipFile, 0777);
+
+        @unlink($zipFile);
+
+        return $this;
     }
 
     /**
-     * Download the temporary Zip to the given file.
+     * Make sure the storage and bootstrap cache directories are writable.
      *
-     * @param  string  $zipFile
-     * @param  string  $version
+     * @param string $appDirectory
+     * @param \Symfony\Component\Console\Output\OutputInterface $output
      * @return $this
      */
-    protected function download($zipFile, $version = self::APP_LATEST_VERSION)
+    protected function prepareWritableDirectories($appDirectory, OutputInterface $output)
     {
-        $filename = $version.'.zip';
+        $filesystem = new Filesystem;
 
-        $targetFile = fopen( $filename, 'w' );
-
-        $ch = curl_init( self::DOWNLOAD_URL.$filename );
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt( $ch, CURLOPT_NOPROGRESS, false );
-        curl_setopt( $ch, CURLOPT_PROGRESSFUNCTION,  'progressCallback');
-        curl_setopt( $ch, CURLOPT_FILE, $targetFile );
-        curl_exec( $ch );
-        fclose( $ch );
-
-//        $response = (new Client)->get(self::DOWNLOAD_URL.$filename);
-
-        //file_put_contents($zipFile, $response->getBody());
+        try {
+            $filesystem->chmod($appDirectory . DIRECTORY_SEPARATOR . 'pub/static', 0755, 0000, true);
+            $filesystem->chmod($appDirectory . DIRECTORY_SEPARATOR . 'generated', 0755, 0000, true);
+            $filesystem->chmod($appDirectory . DIRECTORY_SEPARATOR . 'var', 0755, 0000, true);
+        } catch (IOExceptionInterface $e) {
+            $output->writeln('<comment>You should verify that the "var", "pub/static" & "generated" directories are writable.</comment>');
+        }
 
         return $this;
     }
@@ -166,8 +166,8 @@ class NewMagentoCommand extends Command
     /**
      * Extract the Zip file into the given directory.
      *
-     * @param  string  $zipFile
-     * @param  string  $directory
+     * @param string $zipFile
+     * @param string $directory
      * @return $this
      */
     protected function extract($zipFile, $directory)
@@ -188,40 +188,49 @@ class NewMagentoCommand extends Command
     }
 
     /**
-     * Clean-up the Zip file.
+     * Download the temporary Zip to the given file.
      *
-     * @param  string  $zipFile
+     * @param string $zipFile
+     * @param string $version
+     * @param OutputInterface $output
      * @return $this
+     * @throws \GuzzleHttp\Exception\GuzzleException
      */
-    protected function cleanUp($zipFile)
+    protected function download($zipFile, $version = self::APP_LATEST_VERSION)
     {
-        @chmod($zipFile, 0777);
+        $filename = $version . '.zip';
 
-        @unlink($zipFile);
+        $response = (new Client)
+            ->request('GET', self::DOWNLOAD_URL . $filename, ['progress' => function (
+                $downloadTotal,
+                $downloadedBytes,
+                $uploadTotal,
+                $uploadedBytes
+            ) {
+                $D = number_format($downloadedBytes / 1024 / 1024, 2);
+                $T = number_format($downloadTotal / 1024 / 1024, 2);
+                $P = 0 . ' %';
+                if ($T != 0) {
+                    $P = number_format($D / $T * 100, 2) . ' %';
+                    echo $D . 'MB / ' . $T . "MB | " . $P . "\r";
+                }
+//                $output->writeln($D . 'MB / ' . $T . "MB | " . $P );
+
+            },]);
+
+        file_put_contents($zipFile, $response->getBody());
 
         return $this;
     }
 
     /**
-     * Make sure the storage and bootstrap cache directories are writable.
+     * Generate a random temporary filename.
      *
-     * @param  string  $appDirectory
-     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
-     * @return $this
+     * @return string
      */
-    protected function prepareWritableDirectories($appDirectory, OutputInterface $output)
+    protected function makeFilename()
     {
-        $filesystem = new Filesystem;
-
-        try {
-            $filesystem->chmod($appDirectory.DIRECTORY_SEPARATOR.'pub/static', 0755, 0000, true);
-            $filesystem->chmod($appDirectory.DIRECTORY_SEPARATOR.'generated', 0755, 0000, true);
-            $filesystem->chmod($appDirectory.DIRECTORY_SEPARATOR.'var', 0755, 0000, true);
-        } catch (IOExceptionInterface $e) {
-            $output->writeln('<comment>You should verify that the "var", "pub/static" & "generated" directories are writable.</comment>');
-        }
-
-        return $this;
+        return getcwd() . '/magento_' . md5(time() . uniqid()) . '.zip';
     }
 
     /**
@@ -231,22 +240,28 @@ class NewMagentoCommand extends Command
      */
     protected function findComposer()
     {
-        $composerPath = getcwd().'/composer.phar';
+        $composerPath = getcwd() . '/composer.phar';
 
         if (file_exists($composerPath)) {
-            return '"'.PHP_BINARY.'" '.$composerPath;
+            return '"' . PHP_BINARY . '" ' . $composerPath;
         }
 
         return 'composer';
     }
 
-    protected function progressCallback( $download_size, $downloaded_size, $upload_size, $uploaded_size )
+    /**
+     * Show the download progress since it's little-bit large file
+     * @param $downloadTotal
+     * @param $downloadedBytes
+     */
+    protected function showProgress($downloadTotal, $downloadedBytes)
     {
-        if ($upload_size){
-            $t = number_format(($downloaded_size / 1024 / 1024), 2);
-            $d = number_format($upload_size / 1024 / 1024, 2);
-            $p = round($d / $t * 100);
-            echo $d . 'MB / ' . $t . "MB | " . $p . "% \r";
+        $D = number_format($downloadedBytes / 1024 / 1024, 3);
+        $T = number_format($downloadTotal / 1024 / 1024, 3);
+        $P = 0 . ' %';
+        if ($T != 0) {
+            $P = number_format($D / $T * 100, 2) . ' %';
         }
+        echo $D . 'MB / ' . $T . "MB | " . $P . "\r";
     }
 }
