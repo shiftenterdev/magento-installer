@@ -1,5 +1,5 @@
 {
-    "name": "shiftenterdev/magento-installer",
+    "name": "magento/installer",
     "description": "Magento application installer.",
     "keywords": ["magento","magento installer"],
     "license": "MIT",
