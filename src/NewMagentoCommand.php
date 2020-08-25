@@ -48,9 +48,9 @@ class NewMagentoCommand extends Command
             throw new RuntimeException('The Magento installer requires PHP 7.3.0 or greater. Please use "composer create-project ...." command instead.');
         }
 
-        if (!extension_loaded('zip')) {
-            throw new RuntimeException('The Zip PHP extension is not installed. Please install it and try again.');
-        }
+//        if (!extension_loaded('zip')) {
+//            throw new RuntimeException('The Zip PHP extension is not installed. Please install it and try again.');
+//        }
 
         $name = $input->getArgument('name');
 
@@ -58,18 +58,18 @@ class NewMagentoCommand extends Command
 
         $application_version = $version ?? self::APP_LATEST_VERSION;
 
-        $directory = $name && $name !== '.' ? getcwd() . '/' . $name : getcwd();
+        $directory =  $name;
 
         if (!$input->getOption('force')) {
             $this->verifyApplicationDoesntExist($directory);
         }
 
-        $output->writeln('<info>Application\'s files are coming...</info>');
+        $output->writeln('<info>Application\'s files are pouring...</info>');
 
-        $this->download($zipFile = $this->makeFilename(), $application_version)
-            ->extract($zipFile, $directory)
+        $this->download($tarFile = $this->makeFilename(), $application_version)
+            ->extract($tarFile, $directory)
             ->prepareWritableDirectories($directory, $output)
-            ->cleanUp($zipFile);
+            ->cleanUp($tarFile);
 
         $composer = $this->findComposer();
 
@@ -127,16 +127,16 @@ class NewMagentoCommand extends Command
     }
 
     /**
-     * Clean-up the Zip file.
+     * Clean-up the Tar file.
      *
-     * @param string $zipFile
+     * @param $tarFile
      * @return $this
      */
-    protected function cleanUp($zipFile)
+    protected function cleanUp($tarFile)
     {
-        @chmod($zipFile, 0777);
+        @chmod($tarFile, 0777);
 
-        @unlink($zipFile);
+        @unlink($tarFile);
 
         return $this;
     }
@@ -164,48 +164,43 @@ class NewMagentoCommand extends Command
     }
 
     /**
-     * Extract the Zip file into the given directory.
+     * Extract the Tar file into the given directory.
      *
-     * @param string $zipFile
+     * @param $archiveFile
      * @param string $directory
      * @return $this
      */
-    protected function extract($zipFile, $directory)
+    protected function extract($archiveFile, $directory)
     {
-        $archive = new ZipArchive;
+        $archive = new \PharData($archiveFile);
 
-        $response = $archive->open($zipFile, ZipArchive::CHECKCONS);
+        $archive->extractTo(getcwd());
 
-        if ($response === ZipArchive::ER_NOZIP) {
-            throw new RuntimeException('The zip file could not download. Verify that you are able to access: http://github.com');
-        }
+        $basename = $archive->getBasename();
 
-        $archive->extractTo($directory);
-
-        $archive->close();
+        rename($basename,$directory);
 
         return $this;
     }
 
     /**
-     * Download the temporary Zip to the given file.
+     * Download the temporary Tar to the given file.
      *
-     * @param string $zipFile
+     * @param $tarFile
      * @param string $version
-     * @param OutputInterface $output
      * @return $this
      * @throws \GuzzleHttp\Exception\GuzzleException
      */
-    protected function download($zipFile, $version = self::APP_LATEST_VERSION)
+    protected function download($tarFile, $version = self::APP_LATEST_VERSION)
     {
-        $filename = $version . '.zip';
+        $filename = $version . '.tar.gz';
+
+        $url = self::DOWNLOAD_URL . $filename;
 
         $response = (new Client)
-            ->request('GET', self::DOWNLOAD_URL . $filename, ['progress' => function (
+            ->request('GET', $url, ['progress' => function (
                 $downloadTotal,
-                $downloadedBytes,
-                $uploadTotal,
-                $uploadedBytes
+                $downloadedBytes
             ) {
                 $D = number_format($downloadedBytes / 1024 / 1024, 2);
                 $T = number_format($downloadTotal / 1024 / 1024, 2);
@@ -213,12 +208,13 @@ class NewMagentoCommand extends Command
                 if ($T != 0) {
                     $P = number_format($D / $T * 100, 2) . ' %';
                     echo $D . 'MB / ' . $T . "MB | " . $P . "\r";
+                }else {
+                    echo $D . 'MB / ' . "? MB | " . $P . "\r";
                 }
-//                $output->writeln($D . 'MB / ' . $T . "MB | " . $P );
 
             },]);
 
-        file_put_contents($zipFile, $response->getBody());
+        file_put_contents($tarFile, $response->getBody());
 
         return $this;
     }
@@ -230,7 +226,7 @@ class NewMagentoCommand extends Command
      */
     protected function makeFilename()
     {
-        return getcwd() . '/magento_' . md5(time() . uniqid()) . '.zip';
+        return getcwd() . '/magento_' . md5(time() . uniqid()) . '.tar.gz';
     }
 
     /**
@@ -249,19 +245,4 @@ class NewMagentoCommand extends Command
         return 'composer';
     }
 
-    /**
-     * Show the download progress since it's little-bit large file
-     * @param $downloadTotal
-     * @param $downloadedBytes
-     */
-    protected function showProgress($downloadTotal, $downloadedBytes)
-    {
-        $D = number_format($downloadedBytes / 1024 / 1024, 3);
-        $T = number_format($downloadTotal / 1024 / 1024, 3);
-        $P = 0 . ' %';
-        if ($T != 0) {
-            $P = number_format($D / $T * 100, 2) . ' %';
-        }
-        echo $D . 'MB / ' . $T . "MB | " . $P . "\r";
-    }
 }
